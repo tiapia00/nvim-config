@@ -9,6 +9,9 @@ vim.keymap.set("n", "<leader>u", require("undotree").open)
 
 -- Neovim Python provider
 vim.g.python3_host_prog = [[C:\Users\mattiaan\AppData\Local\Programs\Python\Python312\python.exe]]
+-- Keep Unicode output intact for Python tools such as render-markdown's
+-- latex2text converter on Windows.
+vim.env.PYTHONUTF8 = "1"
 
 vim.opt.title = true
 vim.opt.titlestring = "%t"
@@ -189,6 +192,26 @@ require("lazy").setup({
   { "SirVer/ultisnips", event = "InsertEnter" },
   { "tpope/vim-fugitive" },
   {
+    "sindrets/diffview.nvim",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-tree/nvim-web-devicons",
+    },
+    cmd = {
+      "DiffviewOpen",
+      "DiffviewClose",
+      "DiffviewFileHistory",
+      "DiffviewToggleFiles",
+    },
+    keys = {
+      { "<leader>gd", "<cmd>DiffviewOpen<CR>", desc = "Git diff view" },
+      { "<leader>gh", "<cmd>DiffviewFileHistory %<CR>", desc = "Git history (file)" },
+      { "<leader>gH", "<cmd>DiffviewFileHistory<CR>", desc = "Git history (repository)" },
+      { "<leader>gf", "<cmd>DiffviewToggleFiles<CR>", desc = "Toggle Git files panel" },
+      { "<leader>gq", "<cmd>DiffviewClose<CR>", desc = "Close Git diff view" },
+    },
+  },
+  {
     "nvim-telescope/telescope.nvim",
     tag = "0.1.8",
     dependencies = {
@@ -230,7 +253,7 @@ require("lazy").setup({
     priority = 1000,
     config = function()
       require("catppuccin").setup({
-        flavour = "mocha",
+        flavour = "latte",
       })
       vim.cmd.colorscheme("catppuccin")
     end,
@@ -501,6 +524,26 @@ end
     end,
   },
 
+  {
+    "MeanderingProgrammer/render-markdown.nvim",
+    ft = { "markdown", "quarto" },
+    dependencies = {
+      "nvim-treesitter/nvim-treesitter",
+    },
+    keys = {
+      {
+        "<leader>mp",
+        "<cmd>RenderMarkdown toggle<cr>",
+        desc = "Toggle Markdown preview",
+      },
+    },
+    opts = {
+      file_types = { "markdown", "quarto" },
+      -- Render in normal mode, but reveal the source while editing.
+      render_modes = { "n", "c", "t" },
+    },
+  },
+
   { "jmbuhr/otter.nvim" },
   { "willothy/wezterm.nvim" },
 
@@ -622,10 +665,51 @@ end
   config = function()
     local ufo = require("ufo")
 
+    -- Closed folds otherwise keep their Treesitter / render-markdown colors.
+    -- On the light theme this can leave orange headings on a pale background,
+    -- so use one high-contrast style for the folded title and a muted counter.
+    local function fold_virt_text_handler(virt_text, lnum, end_lnum, width, truncate)
+      local hidden_lines = end_lnum - lnum
+      local suffix = ("  · %d %s "):format(
+        hidden_lines,
+        hidden_lines == 1 and "line" or "lines"
+      )
+      local suffix_width = vim.fn.strdisplaywidth(suffix)
+      local target_width = math.max(width - suffix_width, 0)
+      local result = {}
+      local current_width = 0
+
+      for _, chunk in ipairs(virt_text) do
+        local text = chunk[1]
+        local chunk_width = vim.fn.strdisplaywidth(text)
+
+        if current_width + chunk_width > target_width then
+          text = truncate(text, target_width - current_width)
+          chunk_width = vim.fn.strdisplaywidth(text)
+        end
+
+        if text ~= "" then
+          table.insert(result, { text, "UfoFoldedText" })
+          current_width = current_width + chunk_width
+        end
+
+        if current_width >= target_width then
+          break
+        end
+      end
+
+      if current_width < target_width then
+        suffix = string.rep(" ", target_width - current_width) .. suffix
+      end
+      table.insert(result, { suffix, "UfoFoldedCount" })
+      return result
+    end
+
     -- --------------------------------------------------
     -- UFO setup
     -- --------------------------------------------------
     ufo.setup({
+      fold_virt_text_handler = fold_virt_text_handler,
       provider_selector = function(_, filetype, _)
           return { "treesitter", "indent" }
         end,
@@ -783,13 +867,6 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = { "markdown", "quarto" },
-  callback = function()
-    vim.opt_local.conceallevel = 0
-  end,
-})
-
 vim.o.foldcolumn = "0" -- '0' is not bad
 vim.o.foldlevel = 99   -- Using ufo provider need a large value, feel free to decrease the value
 vim.o.foldlevelstart = 99
@@ -801,7 +878,7 @@ vim.opt.encoding = "utf-8"
 vim.opt.splitright = true
 vim.opt.completeopt = { "menu", "menuone", "noselect" }
 vim.opt.termguicolors = true
-vim.opt.background = "dark"
+vim.opt.background = "light"
 
 vim.cmd("filetype plugin indent on")
 vim.cmd("syntax on")
@@ -816,6 +893,27 @@ vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, { desc = "Rename symbol" }
 -- ============================================================
 -- Appearance
 -- ============================================================
+local function set_fold_highlights()
+  vim.api.nvim_set_hl(0, "Folded", { fg = "#3c3f58", bg = "#dce0e8" })
+  vim.api.nvim_set_hl(0, "UfoFoldedFg", { fg = "#3c3f58" })
+  vim.api.nvim_set_hl(0, "UfoFoldedBg", { bg = "#dce0e8" })
+  vim.api.nvim_set_hl(0, "UfoFoldedText", {
+    fg = "#303446",
+    bg = "#dce0e8",
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "UfoFoldedCount", {
+    fg = "#6c6f85",
+    bg = "#dce0e8",
+    italic = true,
+  })
+end
+
+set_fold_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  callback = set_fold_highlights,
+})
+
 vim.api.nvim_set_hl(0, "SpellBad", {
   fg = "#f38ba8",
   bg = "#3b1f2b",
