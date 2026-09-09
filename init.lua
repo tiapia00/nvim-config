@@ -248,14 +248,12 @@ require("lazy").setup({
     end,
   },
   {
-    "catppuccin/nvim",
-    name = "catppuccin",
+    "ellisonleao/gruvbox.nvim",
     priority = 1000,
     config = function()
-      require("catppuccin").setup({
-        flavour = "latte",
-      })
-      vim.cmd.colorscheme("catppuccin")
+      vim.opt.background = "light"
+      require("gruvbox").setup({})
+      vim.cmd.colorscheme("gruvbox")
     end,
   },
 
@@ -1343,6 +1341,52 @@ local function comment_message(comment)
   ].content or "(no message)"
 end
 
+local function comment_posted_at(comment)
+  if not comment.messages
+    or #comment.messages == 0
+  then
+    return ""
+  end
+
+  local timestamp = comment.messages[
+    #comment.messages
+  ].timestamp
+
+  if timestamp == nil then
+    return ""
+  end
+
+  local numeric_timestamp =
+    tonumber(timestamp)
+
+  if numeric_timestamp then
+    -- Overleaf timestamps may be Unix seconds or milliseconds.
+    if numeric_timestamp > 100000000000 then
+      numeric_timestamp =
+        math.floor(numeric_timestamp / 1000)
+    end
+
+    return os.date(
+      "%Y-%m-%d %H:%M",
+      numeric_timestamp
+    )
+  end
+
+  local value =
+    tostring(timestamp)
+
+  local date, time =
+    value:match(
+      "^(%d%d%d%d%-%d%d%-%d%d)[T ](%d%d:%d%d)"
+    )
+
+  if date and time then
+    return date .. " " .. time
+  end
+
+  return value
+end
+
 
 -- ============================================================
 -- Git root
@@ -2064,6 +2108,14 @@ local function overleaf_comments()
         comment.line or 0
       )
 
+    local posted_at =
+      comment_posted_at(comment)
+
+    local posted_description =
+      posted_at ~= ""
+        and "[" .. posted_at .. "] "
+        or ""
+
     table.insert(
       entries,
       {
@@ -2071,8 +2123,9 @@ local function overleaf_comments()
 
         display =
           string.format(
-            "%-28s %s",
+            "%-28s %s%s",
             location,
+            posted_description,
             short_message
           ),
 
@@ -2084,6 +2137,7 @@ local function overleaf_comments()
                 comment.line or ""
               ),
               comment.selectedText or "",
+              posted_at,
               short_message,
             },
             " "
@@ -2615,3 +2669,50 @@ vim.keymap.set(
       "Refresh and open Overleaf comments",
   }
 )
+
+-- ============================================================
+-- Autohotkey_latex
+-- ============================================================
+--
+-- local ahk_job = nil
+--
+-- local autohotkey_exe =
+--   "C:/Users/mattiaan/AppData/Local/Programs/AutoHotkey/v2/AutoHotkey64.exe"
+--
+-- local ahk_script =
+--   "C:/Users/mattiaan/Documents/AutoHotkey/Paired sioyek + neovim.ahk"
+--
+-- -- Start AutoHotkey when a LaTeX file is opened
+-- vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+--   pattern = { "*.tex", "*.bib" },
+--
+--   callback = function()
+--     -- Already running for this Neovim instance
+--     if ahk_job then
+--       return
+--     end
+--
+--     ahk_job = vim.fn.jobstart({
+--       autohotkey_exe,
+--       ahk_script,
+--     })
+--
+--     if ahk_job <= 0 then
+--       vim.notify(
+--         "Failed to start AutoHotkey",
+--         vim.log.levels.ERROR
+--       )
+--       ahk_job = nil
+--     end
+--   end,
+-- })
+--
+-- -- Stop AutoHotkey when Neovim exits
+-- vim.api.nvim_create_autocmd("VimLeavePre", {
+--   callback = function()
+--     if ahk_job then
+--       vim.fn.jobstop(ahk_job)
+--       ahk_job = nil
+--     end
+--   end,
+-- })
