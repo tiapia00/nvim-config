@@ -185,30 +185,69 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+local function open_lazygit()
+  if vim.fn.executable("lazygit") ~= 1 then
+    vim.notify("Lazygit is not installed or is not on PATH", vim.log.levels.ERROR)
+    return
+  end
+
+  local current_file = vim.api.nvim_buf_get_name(0)
+  local root = vim.fs.root(current_file ~= "" and current_file or 0, ".git")
+    or vim.fn.getcwd()
+
+  vim.cmd.tabnew()
+  local terminal_buffer = vim.api.nvim_get_current_buf()
+  vim.fn.jobstart({ "lazygit" }, {
+    cwd = root,
+    term = true,
+    on_exit = function()
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(terminal_buffer) then
+          vim.api.nvim_buf_delete(terminal_buffer, { force = true })
+        end
+      end)
+    end,
+  })
+  vim.cmd.startinsert()
+end
+
+vim.keymap.set("n", "<leader>gg", open_lazygit, { desc = "Open Lazygit" })
+
 -- ============================================================
 -- Plugins
 -- ============================================================
 require("lazy").setup({
   { "SirVer/ultisnips", event = "InsertEnter" },
-  { "tpope/vim-fugitive" },
   {
-    "sindrets/diffview.nvim",
-    dependencies = {
-      "nvim-lua/plenary.nvim",
-      "nvim-tree/nvim-web-devicons",
-    },
-    cmd = {
-      "DiffviewOpen",
-      "DiffviewClose",
-      "DiffviewFileHistory",
-      "DiffviewToggleFiles",
-    },
+    "lewis6991/gitsigns.nvim",
+    event = { "BufReadPre", "BufNewFile" },
     keys = {
-      { "<leader>gd", "<cmd>DiffviewOpen<CR>", desc = "Git diff view" },
-      { "<leader>gh", "<cmd>DiffviewFileHistory %<CR>", desc = "Git history (file)" },
-      { "<leader>gH", "<cmd>DiffviewFileHistory<CR>", desc = "Git history (repository)" },
-      { "<leader>gf", "<cmd>DiffviewToggleFiles<CR>", desc = "Toggle Git files panel" },
-      { "<leader>gq", "<cmd>DiffviewClose<CR>", desc = "Close Git diff view" },
+      { "<leader>hs", function() require("gitsigns").stage_hunk() end, mode = { "n", "v" }, desc = "Stage Git hunk" },
+      { "<leader>hr", function() require("gitsigns").reset_hunk() end, mode = { "n", "v" }, desc = "Reset Git hunk" },
+      { "<leader>hp", function() require("gitsigns").preview_hunk() end, desc = "Preview Git hunk" },
+      { "<leader>hd", function() require("gitsigns").diffthis() end, desc = "Diff current file" },
+      { "<leader>hb", function() require("gitsigns").blame_line({ full = true }) end, desc = "Blame Git line" },
+    },
+    opts = {
+      on_attach = function(bufnr)
+        local gs = require("gitsigns")
+
+        vim.keymap.set("n", "]c", function()
+          if vim.wo.diff then
+            vim.cmd.normal({ "]c", bang = true })
+          else
+            gs.nav_hunk("next")
+          end
+        end, { buffer = bufnr, desc = "Next Git hunk" })
+
+        vim.keymap.set("n", "[c", function()
+          if vim.wo.diff then
+            vim.cmd.normal({ "[c", bang = true })
+          else
+            gs.nav_hunk("prev")
+          end
+        end, { buffer = bufnr, desc = "Previous Git hunk" })
+      end,
     },
   },
   {
